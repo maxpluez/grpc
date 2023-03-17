@@ -60,6 +60,8 @@ target_link_libraries(hw_grpc_proto
 #add_library(telemetry_interceptor TelemetryInterceptor.cpp)
 #target_link_libraries(telemetry_interceptor ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF})
 add_subdirectory(interceptors)
+add_library(helper helper.h)
+target_link_libraries(helper ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF})
 
 # Targets greeter_[async_](client|server)
 foreach(_target client)
@@ -67,6 +69,7 @@ foreach(_target client)
   target_link_libraries(${_target}
     hw_grpc_proto
     telemetry_interceptor
+    helper
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

@@ -2,6 +2,7 @@
 #include <google/protobuf/arena.h>
 #include "roomServer.grpc.pb.h"
 #include "interceptors/TelemetryInterceptorFactory.h"
+#include "helper.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -10,7 +11,7 @@ using grpc::RoomServer;
 using grpc::RoomSessionMessage;
 using grpc::RoomFeedsResponse;
 
-constexpr char GRPC_SERVER_EP[] = "10.164.0.157:5100";
+constexpr char GRPC_SERVER_EP[] = "";
 
 class VoiceChatGrpcClient {
  public:
@@ -26,9 +27,9 @@ class VoiceChatGrpcClient {
   void test() {
     // Unary rpc call.
     auto reply = asyncRpc();
+    reply = unaryRpc();
     reply = asyncRpc();
-    reply = asyncRpc();
-    reply = asyncRpc();
+    reply = unaryRpc();
     reply = asyncRpc();
     std::cout << "result: " << reply << std::endl;
   }
@@ -93,36 +94,43 @@ class VoiceChatGrpcClient {
     grpc::ChangeNotificationRateRequest* req = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateRequest>(&arena);
     req->set_notificationspersecond(1);
     grpc::ChangeNotificationRateResponse* reply = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateResponse>(&arena);
-    ClientContext context;
+    bool ok = helper.asyncRpc<grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>(stub_, req, reply,
+      [](std::unique_ptr<RoomServer::Stub>& stub1, grpc::ChangeNotificationRateRequest* req1, grpc::ClientContext* c1, grpc::CompletionQueue* cq1){
+        return stub1->AsyncChangeNotificationRate(c1, *req1, cq1);
+      });
 
-    grpc::CompletionQueue cq;
-    std::unique_ptr<grpc::ClientAsyncResponseReader<grpc::ChangeNotificationRateResponse>> rpc(
-      stub_->AsyncChangeNotificationRate(&context, *req, &cq));
+    //ClientContext context;
+    //grpc::CompletionQueue cq;
+    //std::unique_ptr<grpc::ClientAsyncResponseReader<grpc::ChangeNotificationRateResponse>> rpc(
+    //  stub_->AsyncChangeNotificationRate(&context, *req, &cq));
 
-    Status status;
-    rpc->Finish(reply, &status, (void*)1);
+    //Status status;
+    //rpc->Finish(reply, &status, (void*)1);
 
-    void* got_tag;
-    bool ok = false;
-    cq.Next(&got_tag, &ok);
+    //void* got_tag;
+    //bool ok = false;
+    //cq.Next(&got_tag, &ok);
     std::cout << "Arena space allocated: " << arena.SpaceAllocated() << std::endl;
     std::cout << "Arena space used: " << arena.SpaceUsed() << std::endl;
-    if (ok && got_tag == (void*)1) {
+    if (ok/* && got_tag == (void*)1*/) {
       return reply->success() ? "Succeeded! :)" : "Failed! :(";
     } else {
       return "RPC failed";
     }
   }
 
- private:
   std::unique_ptr<RoomServer::Stub> stub_;
+ private:
   google::protobuf::Arena arena;
+  //grpc::CompletionQueue cq;
+  ClientContext m_context;
+  Helper<RoomServer> helper;
 };
 
 int main()
 {
     std::vector<std::unique_ptr<grpc::experimental::ClientInterceptorFactoryInterface>> interceptorFactories;
-    interceptorFactories.push_back(std::make_unique<TelemetryInterceptorFactory>());
+    //interceptorFactories.push_back(std::make_unique<TelemetryInterceptorFactory>());
 
     std::shared_ptr<grpc::Channel> channel = grpc::experimental::CreateCustomChannelWithInterceptors(GRPC_SERVER_EP, grpc::InsecureChannelCredentials(), grpc::ChannelArguments(), std::move(interceptorFactories));
     channel->WaitForConnected(gpr_time_add(
