@@ -3,6 +3,8 @@
 #include "roomServer.grpc.pb.h"
 #include "interceptors/TelemetryInterceptorFactory.h"
 #include "helper.h"
+#include <future>
+#include <thread>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -13,43 +15,56 @@ using grpc::RoomFeedsResponse;
 
 constexpr char GRPC_SERVER_EP[] = "";
 
-class VoiceChatGrpcClient {
+class VoiceGrpcClient {
  public:
-  VoiceChatGrpcClient()
+  VoiceGrpcClient()
       : stub_(RoomServer::NewStub(
             grpc::CreateChannel(
                 GRPC_SERVER_EP,
                 grpc::InsecureChannelCredentials()))) {}
 
-  VoiceChatGrpcClient(std::shared_ptr<grpc::Channel> channel)
+  VoiceGrpcClient(std::shared_ptr<grpc::Channel> channel)
       : stub_(RoomServer::NewStub(channel)) {}
 
-  void test() {
-    // Unary rpc call.
-    auto reply = asyncRpc();
-    reply = unaryRpc();
-    reply = asyncRpc();
-    reply = unaryRpc();
-    reply = asyncRpc();
-    std::cout << "result: " << reply << std::endl;
-  }
-
-  std::string unaryRpc() {
+  std::string changeNotificationRate1(int rate) {
     grpc::ChangeNotificationRateRequest* req = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateRequest>(&arena);
-    req->set_notificationspersecond(1);
+    req->set_notificationspersecond(rate);
     grpc::ChangeNotificationRateResponse* reply = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateResponse>(&arena);
-    ClientContext context;
-    auto status = stub_->ChangeNotificationRate(&context, *req, reply);
+    /*
+    std::future<grpc::Status> statusPromise = std::async(std::launch::async, &Helper::unaryRpc<grpc::RoomServer, grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>, &stub_, req, reply,
+      [](std::unique_ptr<RoomServer::Stub>* stub1, grpc::ChangeNotificationRateRequest* req1, grpc::ChangeNotificationRateResponse* res1, grpc::ClientContext* c1) {
+        return (*stub1)->ChangeNotificationRate(c1, *req1, res1);
+      });
+    grpc::Status status = statusPromise.get();
+    */
+   /*
+    std::thread t(&Helper::unaryRpc<grpc::RoomServer, grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>, &stub_, req, reply,
+      [](std::unique_ptr<RoomServer::Stub>* stub1, grpc::ChangeNotificationRateRequest* req1, grpc::ChangeNotificationRateResponse* res1, grpc::ClientContext* c1) {
+        return (*stub1)->ChangeNotificationRate(c1, *req1, res1);
+      });
+    t.join();
+    */
+    
+    auto status = Helper::unaryRpc<grpc::RoomServer, grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>(&stub_, req, reply,
+      [](std::unique_ptr<RoomServer::Stub>& stub1, grpc::ChangeNotificationRateRequest* req1, grpc::ChangeNotificationRateResponse* res1, grpc::ClientContext* c1) {
+        return stub1->ChangeNotificationRate(c1, *req1, res1);
+      }
+    );
+    
+   
     if (status.ok()) {
         std::cout << "rpc done:" << reply->ShortDebugString() << std::endl;
     } else {
         std::cout << status.error_code() << ": " << status.error_message() << std::endl;
+        return "rpc failed :(";
     }
+    
     std::cout << "Arena space allocated: " << arena.SpaceAllocated() << std::endl;
     std::cout << "Arena space used: " << arena.SpaceUsed() << std::endl;
     return reply->success() ? "Succeeded! :)" : "Failed! :(";
   }
 
+/*
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
   std::string streamingRpc() {
@@ -89,30 +104,16 @@ class VoiceChatGrpcClient {
       return "RPC failed";
     }
   }
-
-  std::string asyncRpc() {
+*/
+  std::string changeNotificationRate(int rate) {
     grpc::ChangeNotificationRateRequest* req = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateRequest>(&arena);
-    req->set_notificationspersecond(1);
+    req->set_notificationspersecond(rate);
     grpc::ChangeNotificationRateResponse* reply = google::protobuf::Arena::CreateMessage<grpc::ChangeNotificationRateResponse>(&arena);
-    bool ok = helper.asyncRpc<grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>(stub_, req, reply,
+    bool ok = Helper::asyncRpc<grpc::RoomServer, grpc::ChangeNotificationRateRequest, grpc::ChangeNotificationRateResponse>(stub_, req, reply,
       [](std::unique_ptr<RoomServer::Stub>& stub1, grpc::ChangeNotificationRateRequest* req1, grpc::ClientContext* c1, grpc::CompletionQueue* cq1){
         return stub1->AsyncChangeNotificationRate(c1, *req1, cq1);
       });
-
-    //ClientContext context;
-    //grpc::CompletionQueue cq;
-    //std::unique_ptr<grpc::ClientAsyncResponseReader<grpc::ChangeNotificationRateResponse>> rpc(
-    //  stub_->AsyncChangeNotificationRate(&context, *req, &cq));
-
-    //Status status;
-    //rpc->Finish(reply, &status, (void*)1);
-
-    //void* got_tag;
-    //bool ok = false;
-    //cq.Next(&got_tag, &ok);
-    std::cout << "Arena space allocated: " << arena.SpaceAllocated() << std::endl;
-    std::cout << "Arena space used: " << arena.SpaceUsed() << std::endl;
-    if (ok/* && got_tag == (void*)1*/) {
+    if (ok) {
       return reply->success() ? "Succeeded! :)" : "Failed! :(";
     } else {
       return "RPC failed";
@@ -120,11 +121,9 @@ class VoiceChatGrpcClient {
   }
 
   std::unique_ptr<RoomServer::Stub> stub_;
+ 
  private:
   google::protobuf::Arena arena;
-  //grpc::CompletionQueue cq;
-  ClientContext m_context;
-  Helper<RoomServer> helper;
 };
 
 int main()
@@ -137,8 +136,8 @@ int main()
               gpr_now(GPR_CLOCK_REALTIME),
               gpr_time_from_seconds(600, GPR_TIMESPAN)));
     std::cout << "channel connected!" << std::endl;
-    VoiceChatGrpcClient client(channel);
+    VoiceGrpcClient client(channel);
     std::cout << "client connected!" << std::endl;
-    client.test();
+    client.changeNotificationRate1(100);
     return 0;
 }
